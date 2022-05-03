@@ -1,5 +1,15 @@
 #include "functions.h"
 
+// void print_clients(std::vector<struct client_t> &all_clients) {
+// 	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
+// 		std::unordered_map<std::string, bool> subscriptions = cl->subscriptions;
+// 		for (auto it = subscriptions.begin(); it != subscriptions.end(); it++) {
+
+// 		}
+
+// 	}
+// }
+
 
 void notify_clients(std::vector<struct client_t> &all_clients,
                     char topic[50], struct packet_tcp_t *tcp_packet,
@@ -7,7 +17,7 @@ void notify_clients(std::vector<struct client_t> &all_clients,
 
 	/* Pentru fiecare client, verific daca se regaseste topicul curent */
 	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
-		std::unordered_map<std::string, bool> subscriptions = cl->subscriptions;
+		std::unordered_map<std::string, int> subscriptions = cl->subscriptions;
 
 		if (subscriptions.find(topic) != subscriptions.end()) {
 			if (cl->active == 1) {
@@ -17,9 +27,10 @@ void notify_clients(std::vector<struct client_t> &all_clients,
 			} else {
 				/* Client inactiv */
 				int cl_socket = cl->socket;
+				int active_sf = subscriptions[topic];
 
 				/* 2 tipuri de clienti in functie de sf */
-				if (cl->sf == 1) {
+				if (active_sf == 1) {
 
 					/* Initializare coada pentru clientul curent */
 					if (waiting_queue.find(cl_socket) == waiting_queue.end()) {
@@ -28,7 +39,7 @@ void notify_clients(std::vector<struct client_t> &all_clients,
 					}
 					waiting_queue[cl_socket].push(*tcp_packet);
 			
-				} else if (cl->sf == 0) {
+				} else if (active_sf == 0) {
 					fprintf(stderr, "Clientul nu permite pastrarea in coada");
 				}
 			}
@@ -39,17 +50,14 @@ void notify_clients(std::vector<struct client_t> &all_clients,
 void send_from_queue(int cl_socket,
 					std::unordered_map<int, std::queue<packet_tcp_t>> &waiting_queue) {
 
+	//std::cout << waiting_queue.size() << "\n";
 	while (!waiting_queue[cl_socket].empty()) {
 		packet_tcp_t packet = waiting_queue[cl_socket].front();
+		//printf("%d %s\n", cl_socket, packet.topic);
 		waiting_queue[cl_socket].pop();
 
 		int n = send(cl_socket, (char *)&packet, BUFLEN, 0);
 		DIE(n < 0, "Error sending from queue");
-	}
-}
-void iterate_clients(std::vector<struct client_t> &all_clients) {
-	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
-		fprintf(stderr,"%s %d\n", cl->id, cl->active);
 	}
 }
 
@@ -76,12 +84,11 @@ void connect_client(fd_set *read_fds, int cl_socket, char client_id[BUFLEN], cha
 		}
 	}
 	if (connected == false) {
-		std::unordered_map<std::string, bool> subscriptions;
+		std::unordered_map<std::string, int> subscriptions;
 		struct client_t new_client;
 		new_client.subscriptions = subscriptions;
 		new_client.active = 1;
 		new_client.socket = cl_socket;
-		new_client.sf = -1;
 		strcpy(new_client.id, client_id);
 
 		all_clients.push_back(new_client);
@@ -108,25 +115,18 @@ void disconnect_all_clients(std::vector<struct client_t> &all_clients, fd_set *r
 	all_clients.clear();
 }
 
-void change_sf(std::string &client_id, int sf,
-					std::vector<struct client_t> &all_clients) {
-	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
-		std::string check_id(cl->id);
-
-		if (check_id == client_id) {
-			cl->sf = sf;
-		}
-	}
-}
-
-void subscribe_user(std::string &client_id, char* topic,
+void subscribe_user(std::string &client_id, char* topic, int new_sf,
 					std::vector<struct client_t>&all_clients) {
 
 	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
 		std::string check_id(cl->id);
 
 		if (client_id == check_id) {
-			cl->subscriptions[topic] = true;
+			if (new_sf == 1) {
+				cl->subscriptions[topic] = 1;
+			} else {
+				cl->subscriptions[topic] = 0;
+			}
 		}
 	}
 }
@@ -137,7 +137,7 @@ void unsubscribe_user(std::string &client_id, char* topic,
 		std::string check_id(cl->id);
 
 		if (client_id == check_id) {
-			cl->subscriptions[topic] = false;
+			cl->subscriptions.erase(cl->subscriptions.find(topic));
 		}
 	}
 }
@@ -194,7 +194,6 @@ void from_udp_to_tcp(char buffer[1600], char ip_address[16],
 		memcpy(tcp_packet->payload, datagram_udp->payload, sizeof(datagram_udp->payload));
 		check = true;
 	}
-	// printf("Topic: %s, Type: %d, Msg: %s\n", tcp_packet->topic, tcp_packet->type, tcp_packet->payload);
 	if (check == false) {
 		fprintf(stderr, "Invalid type.");
 	}				

@@ -184,13 +184,12 @@ int main(int argc, char *argv[])
 							/* Pentru subscribe => subscribe / topic / sf */
 							char *topic = strtok(NULL, " ");
 							char *sf = strtok(NULL, " ");
-							subscribe_user(clients_id[i], topic, all_clients);
 
 							/* Daca sf = 1 => cand clientul este dezactivat, se retine coada de pachete
 							   Daca sf = 0 => nu se retine coada de pachete */
 							int new_sf = atoi(sf);
 							if (new_sf == 0 || new_sf == 1) {
-								change_sf(clients_id[i], new_sf, all_clients);
+								subscribe_user(clients_id[i], topic, new_sf, all_clients);
 							} else {
 								fprintf(stderr, "Invalid SF!");
 							}

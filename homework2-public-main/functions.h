@@ -23,8 +23,7 @@ struct client_t {
     int socket;
     char id[256];
     bool active;
-    int sf;
-    std::unordered_map<std::string, bool> subscriptions;
+    std::unordered_map<std::string, int> subscriptions;
 };
 
 typedef struct datagram_udp_t datagram_udp_t;
@@ -58,8 +57,8 @@ void notify_clients(std::vector<struct client_t> &all_clients,
                     char topic[50], struct packet_tcp_t *tcp_packet,
                     std::unordered_map<int, std::queue <struct packet_tcp_t>> &waiting_queue);
 
-void subscribe_user(std::string &client_id, char* topic,
-					std::vector<struct client_t>& all_clients);
+void subscribe_user(std::string &client_id, char* topic, int new_sf,
+					std::vector<struct client_t>&all_clients);
 
 void unsubscribe_user(std::string &client_id, char* topic,
 					std::vector<struct client_t>& all_clients);

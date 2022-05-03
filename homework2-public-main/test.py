@@ -12,7 +12,7 @@ from os import path
 from time import sleep
 
 # default port for the  server
-port = "12345"
+port = "12347"
 
 # default IP for the server
 ip = "127.0.0.1"
@@ -690,7 +690,7 @@ def h2_test():
             c2 = run_test_c2_restart_sf(server, topics)
 
     # send all types of message 30 times in quick succesion and check
-    # run_test_quick_flow(c1, topics)
+    run_test_quick_flow(c1, topics)
 
   # close the server and check that C1 also closes
   run_test_server_stop(server, c1)
