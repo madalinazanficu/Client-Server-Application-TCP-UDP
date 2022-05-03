@@ -114,7 +114,7 @@ int main(int argc, char *argv[])
 			memset(buffer, 0, BUFLEN);
 			n = read(0, buffer, sizeof(buffer) - 1);
 			if (strncmp(buffer, "exit", 4) == 0) {
-				disconnect_all_clients(all_clients);
+				disconnect_all_clients(all_clients, &read_fds);
 				break;
 			}
 		}
@@ -137,7 +137,7 @@ int main(int argc, char *argv[])
 					clients_id[newsockfd] = client_id;
 
 					/* Conectarea unui nou client TCP */
-					connect_client(newsockfd, client_id, inet_ntoa(cli_addr.sin_addr),
+					connect_client(&read_fds, newsockfd, client_id, inet_ntoa(cli_addr.sin_addr),
 									ntohs(cli_addr.sin_port), all_clients, waiting_queue);
 								
 				} else if (i == udp_socket) {

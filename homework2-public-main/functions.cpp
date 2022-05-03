@@ -36,6 +36,111 @@ void notify_clients(std::vector<struct client_t> &all_clients,
 	}
 }
 
+void send_from_queue(int cl_socket,
+					std::unordered_map<int, std::queue<packet_tcp_t>> &waiting_queue) {
+
+	while (!waiting_queue[cl_socket].empty()) {
+		packet_tcp_t packet = waiting_queue[cl_socket].front();
+		waiting_queue[cl_socket].pop();
+
+		int n = send(cl_socket, (char *)&packet, BUFLEN, 0);
+		DIE(n < 0, "Error sending from queue");
+	}
+}
+void iterate_clients(std::vector<struct client_t> &all_clients) {
+	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
+		fprintf(stderr,"%s %d\n", cl->id, cl->active);
+	}
+}
+
+void connect_client(fd_set *read_fds, int cl_socket, char client_id[BUFLEN], char ip_address[BUFLEN],
+					uint16_t port,  std::vector<struct client_t> &all_clients,
+					std::unordered_map<int, std::queue<packet_tcp_t>> &waiting_queue) {
+
+	bool connected = false;
+	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
+
+		/* Clientul este deja inregistrat */
+		if (strncmp(cl->id, client_id, 10) == 0) {
+			connected = true;
+			if (cl->active == true) {
+				printf("Client %s already connected.\n", client_id);
+				disconnect_one_client(cl_socket, read_fds);
+
+			} else {
+				printf("New client %s connected from %s:%d\n", client_id, ip_address, port);
+				cl->active = true;
+				/* Se trimite tot ce avea el in coada de asteptare */
+				send_from_queue(cl->socket, waiting_queue);
+			}
+		}
+	}
+	if (connected == false) {
+		std::unordered_map<std::string, bool> subscriptions;
+		struct client_t new_client;
+		new_client.subscriptions = subscriptions;
+		new_client.active = 1;
+		new_client.socket = cl_socket;
+		new_client.sf = -1;
+		strcpy(new_client.id, client_id);
+
+		all_clients.push_back(new_client);
+		printf("New client %s connected from %s:%d\n", client_id, ip_address, port);
+	}
+}
+
+void disconnect_one_client(int cl_socket, fd_set *read_fds) {
+	char buffer[BUFLEN];
+	memset(buffer, 0, BUFLEN);
+	strcpy(buffer, "exit");
+	int res = send(cl_socket, buffer, sizeof(buffer), 0);
+	DIE(res < 0, "Send was compromised!");
+	close(cl_socket);
+	FD_CLR(cl_socket, read_fds);
+}
+
+void disconnect_all_clients(std::vector<struct client_t> &all_clients, fd_set *read_fds) {
+	/* Deconectarea tuturor clientilor activi */
+	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
+		/* Se trimite cerere de inchidere clientilor */
+		disconnect_one_client(cl->socket, read_fds);
+	}
+	all_clients.clear();
+}
+
+void change_sf(std::string &client_id, int sf,
+					std::vector<struct client_t> &all_clients) {
+	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
+		std::string check_id(cl->id);
+
+		if (check_id == client_id) {
+			cl->sf = sf;
+		}
+	}
+}
+
+void subscribe_user(std::string &client_id, char* topic,
+					std::vector<struct client_t>&all_clients) {
+
+	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
+		std::string check_id(cl->id);
+
+		if (client_id == check_id) {
+			cl->subscriptions[topic] = true;
+		}
+	}
+}
+
+void unsubscribe_user(std::string &client_id, char* topic,
+					std::vector<struct client_t>& all_clients) {
+	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
+		std::string check_id(cl->id);
+
+		if (client_id == check_id) {
+			cl->subscriptions[topic] = false;
+		}
+	}
+}
 void from_udp_to_tcp(char buffer[1600], char ip_address[16],
 					uint16_t port, struct packet_tcp_t* tcp_packet) {
 
@@ -93,99 +198,4 @@ void from_udp_to_tcp(char buffer[1600], char ip_address[16],
 	if (check == false) {
 		fprintf(stderr, "Invalid type.");
 	}				
-}
-
-void send_from_queue(int cl_socket,
-					std::unordered_map<int, std::queue<packet_tcp_t>> &waiting_queue) {
-
-	while (!waiting_queue[cl_socket].empty()) {
-		packet_tcp_t packet = waiting_queue[cl_socket].front();
-		waiting_queue[cl_socket].pop();
-
-		int n = send(cl_socket, (char *)&packet, BUFLEN, 0);
-		DIE(n < 0, "Error sending from queue");
-	}
-}
-
-void connect_client(int cl_socket, char client_id[BUFLEN], char ip_address[BUFLEN],
-					uint16_t port,  std::vector<struct client_t> &all_clients,
-					std::unordered_map<int, std::queue<packet_tcp_t>> &waiting_queue) {
-
-	bool connected = false;
-	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
-
-		/* Clientul este deja inregistrat */
-		if (strncmp(cl->id, client_id, 10) == 0) {
-			connected = true;
-			if (cl->active == true) {
-				printf("Client %s already connected.\n", client_id);
-			} else {
-				printf("New client %s connected from %s:%d\n", client_id, ip_address, port);
-				cl->active = true;
-
-				/* Se trimite tot ce avea el in coada de asteptare */
-				send_from_queue(cl->socket, waiting_queue);
-			}
-		}
-	}
-	if (connected == false) {
-		std::unordered_map<std::string, bool> subscriptions;
-		struct client_t new_client;
-		new_client.subscriptions = subscriptions;
-		new_client.active = 1;
-		new_client.socket = cl_socket;
-		new_client.sf = -1;
-		strcpy(new_client.id, client_id);
-
-		all_clients.push_back(new_client);
-		printf("New client %s connected from %s:%d\n", client_id, ip_address, port);
-	}
-}
-
-void disconnect_all_clients(std::vector<struct client_t> &all_clients) {
-	/* Deconectarea tuturor clientilor activi */
-	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
-		/* Se trimite cerere de inchidere clientilor */
-		char buffer[BUFLEN];
-		memset(buffer, 0, BUFLEN);
-		strcpy(buffer, "exit");
-		int res = send(cl->socket, buffer, sizeof(buffer), 0);
-		DIE(res < 0, "Send was compromised!");
-		close(cl->socket);
-	}
-	all_clients.clear();
-}
-
-void change_sf(std::string &client_id, int sf,
-					std::vector<struct client_t> &all_clients) {
-	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
-		std::string check_id(cl->id);
-
-		if (check_id == client_id) {
-			cl->sf = sf;
-		}
-	}
-}
-
-void subscribe_user(std::string &client_id, char* topic,
-					std::vector<struct client_t>&all_clients) {
-
-	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
-		std::string check_id(cl->id);
-
-		if (client_id == check_id) {
-			cl->subscriptions[topic] = true;
-		}
-	}
-}
-
-void unsubscribe_user(std::string &client_id, char* topic,
-					std::vector<struct client_t>& all_clients) {
-	for (auto cl = all_clients.begin(); cl != all_clients.end(); cl++) {
-		std::string check_id(cl->id);
-
-		if (client_id == check_id) {
-			cl->subscriptions[topic] = false;
-		}
-	}
 }
