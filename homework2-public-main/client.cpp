@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include "helpers.h"
+#include "functions.h"
 #include <iostream>
 #include <netinet/tcp.h>
 
@@ -66,7 +67,8 @@ int main(int argc, char *argv[])
 	/* Se trimite id-ul clientului curent catre server*/
 	char client_id[BUFLEN];
 	strcpy(client_id, argv[1]);
-	int send_id = send(sockfd, client_id, strlen(client_id), 0);
+	int send_id = send(sockfd, client_id, sizeof(client_id), 0);
+	DIE(send_id < 0, "Send was compromised in client.");
 
 	while (1) {
 		// /* In tmp_fds se aleg conexiunile */
@@ -81,7 +83,6 @@ int main(int argc, char *argv[])
 			memset(buffer, 0, sizeof(buffer));
 			n = read(0, buffer, sizeof(buffer) - 1);
 			if (strncmp(buffer, "exit", 4) == 0) {
-				printf("Client %s disconnected.\n", client_id);
 				break;
 			}
 			int choose_message = 0;
@@ -97,7 +98,7 @@ int main(int argc, char *argv[])
 				fprintf(stderr, "Mesaj incorect");
 			} else {
 				/* Se trimite mesaj la server */
-				n = send(sockfd, buffer, strlen(buffer), 0);
+				n = send(sockfd, buffer, sizeof(buffer), 0);
 				DIE(n < 0, "send");
 
 				/* Mesajul a fost valid si trimis cu succes la server */
@@ -115,9 +116,28 @@ int main(int argc, char *argv[])
 			int bytes_received = recv(sockfd, buffer, sizeof(buffer), 0);
 			DIE(bytes_received < 0, "Recv error in run_client");
 
-			/* Mesaj de inchidere a serverului */
+			/* Mesaj de inchidere */
 			if (strncmp(buffer, "exit", 4) == 0) {
 				break;
+			} else {
+				/* Mesaj cu topic */
+				packet_tcp_t *packet = (packet_tcp_t *)buffer;
+				std::string type;
+				if (packet->type == 0) {
+					type = "INT";
+				}
+				if (packet->type == 1) {
+					type = "SHORT_REAL";
+				}
+				if (packet->type == 2) {
+					type = "FLOAT";
+				}
+				if (packet->type == 3) {
+					type = "STRING";
+				}
+				std::cout << packet->upd_sender_ip << ":" << packet->udp_sender_port
+						  << " - " << packet->topic << " - " << type
+						  << " - " << packet->payload << "\n";
 			}
 		}
 	}

@@ -12,22 +12,30 @@
 #include <netinet/tcp.h>
 #include <unordered_map>
 #include <vector>
+#include <queue>
+#include <string>
 
-/* int  -> socketul clientului 
-   bool -> True -> 	client conectat /False -> client neconectat */
-std::unordered_map<int, bool> clients;
+/*  AM RAMAS LA RETRIMITEREA TUTUROR CHESTILOR RAMASE
+	IN COADA ATUNCI CAND UN CLIENT SE REACTIVEAZA*/
 
 /* int    -> socketul clientului 
    char * -> id-ul clientului  */
-std::unordered_map<int, char*> clients_id;
+std::unordered_map<int, std::string> clients_id;
+
+
+/* char * -> soecket-ul clientului  
+   queue -> coada de pachete ce asteapta a fi trimise */
+std::unordered_map<int, std::queue <struct packet_tcp_t>> waiting_queue;
 
 std::vector<struct client_t> all_clients;
+
 
 void usage(char *file)
 {
 	fprintf(stderr, "Usage: %s server_port\n", file);
 	exit(0);
 }
+
 
 int main(int argc, char *argv[])
 {
@@ -42,7 +50,7 @@ int main(int argc, char *argv[])
 	struct sockaddr_in serv_addr, cli_addr;
 	int n, i, ret;
 	socklen_t clilen;
-	char client_id[256];
+	char client_id[BUFLEN];
 
 	/* Multimea de socketi de citire folosita in select() */
 	fd_set read_fds;
@@ -81,6 +89,8 @@ int main(int argc, char *argv[])
 
 	ret = bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(struct sockaddr));
 	DIE(ret < 0, "bind");
+	ret = bind(udp_socket, (struct sockaddr *) &serv_addr, sizeof(struct sockaddr));
+	DIE(ret < 0, "bind");
 
 	ret = listen(sockfd, MAX_CLIENTS);
 	DIE(ret < 0, "listen");
@@ -99,7 +109,7 @@ int main(int argc, char *argv[])
 		ret = select(fdmax + 1, &tmp_fds, NULL, NULL, NULL);
 		DIE(ret < 0, "select");
 
-		/* Verificare primire exit de la stdin => inchiderea tuturor clientilor activi */
+		/* Primire exit de la stdin => inchiderea clientilor */
 		if (FD_ISSET(0, &tmp_fds)) {
 			memset(buffer, 0, BUFLEN);
 			n = read(0, buffer, sizeof(buffer) - 1);
@@ -109,7 +119,7 @@ int main(int argc, char *argv[])
 			}
 		}
 
-		for (i = 0; i <= fdmax; i++) {
+		for (i = 1; i <= fdmax; i++) {
 			if (FD_ISSET(i, &tmp_fds)) {
 				if (i == sockfd) {
 					/* Cerere de conexiune pe socketul inactiv de TCP */
@@ -123,41 +133,76 @@ int main(int argc, char *argv[])
 
 					/* Se retine id-ul noului client gasit */
 					memset(client_id, 0, BUFLEN);
-					n = recv(newsockfd, client_id, sizeof(client_id) - 1, 0);
+					n = recv(newsockfd, client_id, sizeof(client_id), 0);
 					clients_id[newsockfd] = client_id;
 
 					/* Conectarea unui nou client TCP */
 					connect_client(newsockfd, client_id, inet_ntoa(cli_addr.sin_addr),
-									ntohs(cli_addr.sin_port), all_clients);
+									ntohs(cli_addr.sin_port), all_clients, waiting_queue);
 								
 				} else if (i == udp_socket) {
 					/* Datagrama de la clientul UDP */
 					memset(buffer, 0, BUFLEN);
-					n = recvfrom(udp_socket, buffer, sizeof(struct datagram_t), 0,
+					n = recvfrom(udp_socket, buffer, BUFLEN, 0,
 								(struct sockaddr *) &cli_addr, &clilen);
 					DIE(n < 0, "Invalid datagram");
 
-					
+
+					struct packet_tcp_t *tcp_packet = (struct packet_tcp_t *)
+														malloc(sizeof(struct packet_tcp_t));
+
+					from_udp_to_tcp(buffer, inet_ntoa(cli_addr.sin_addr),
+									ntohs(cli_addr.sin_port), tcp_packet);
+
+					notify_clients(all_clients, tcp_packet->topic, tcp_packet, waiting_queue);
 
 				} else {
 					/* S-au primit date pe unul din socketii de client,
 						asa ca serverul trebuie sa le receptioneze */
 					memset(buffer, 0, BUFLEN);
-					n = recv(i, buffer, sizeof(buffer) - 1, 0);
+					n = recv(i, buffer, sizeof(buffer), 0);
 					DIE(n < 0, "recv");
 
 					if (n == 0) {
 						/* Conexiunea s-a inchis */
-						printf("Client %s disconnected.\n", clients_id[i]);
+						std::cout << "Client " << clients_id[i] << " disconnected.\n";
 						close(i);
+
+						/* Sterg clientul din lista*/
+						for (auto it = all_clients.begin(); it != all_clients.end(); it++) {
+							if (it->socket == i) {
+								it->active = false;
+								break;
+							}
+						}
 						
 						/* Se scoate din multimea de citire socketul inchis */
 						FD_CLR(i, &read_fds);
 					} else {
-						// int what_client = atoi(buffer);
-						// // printf("in server.c: %d\n", what_client);
-						// int q = send(what_client, buffer, strlen(buffer) + 1, 0);
-						// DIE(q < 0, "Error in server linia 105");
+						char *command = strtok(buffer, " ");
+						if (strncmp(command, "subscribe", 9) == 0) {
+							/* Pentru subscribe => subscribe / topic / sf */
+							char *topic = strtok(NULL, " ");
+							char *sf = strtok(NULL, " ");
+							subscribe_user(clients_id[i], topic, all_clients);
+
+							/* Daca sf = 1 => cand clientul este dezactivat, se retine coada de pachete
+							   Daca sf = 0 => nu se retine coada de pachete */
+							int new_sf = atoi(sf);
+							if (new_sf == 0 || new_sf == 1) {
+								change_sf(clients_id[i], new_sf, all_clients);
+							} else {
+								fprintf(stderr, "Invalid SF!");
+							}
+
+						} else if (strncmp(command, "unsubscribe", 11) == 0) {
+							/* Pentru unsubscribe => unsubscribe / topic */
+							char *topic = strtok(NULL, " ");
+							unsubscribe_user(clients_id[i], topic, all_clients);
+
+						} else {
+							fprintf(stderr, "Invalid command!");
+						}
 					}
 				}
 			}
