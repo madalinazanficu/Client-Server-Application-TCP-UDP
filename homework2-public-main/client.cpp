@@ -71,14 +71,12 @@ int main(int argc, char *argv[])
 	DIE(send_id < 0, "Send was compromised in client.");
 
 	while (1) {
-		// /* In tmp_fds se aleg conexiunile */
+		/* In tmp_fds se aleg conexiunile */
 		tmp_fds = read_fds; 
 		ret = select(fdmax + 1, &tmp_fds, NULL, NULL, NULL);
 		DIE(ret < 0, "Error in client.c linia 75");
 
-		/* Varianta 1: se citesc de la stdin comenzile:
-			exit, subscribe sau unsubscribe
-		*/
+		/* Se citesc de la stdin comenzile: exit, subscribe sau unsubscribe */
 		if (FD_ISSET(0, &tmp_fds)) {
 			memset(buffer, 0, sizeof(buffer));
 			n = read(0, buffer, sizeof(buffer) - 1);
@@ -110,13 +108,13 @@ int main(int argc, char *argv[])
 			}
 		}
 
-		/* Varianta 2: mesaj venit de la server */
+		/* Mesaj venit de la server */
 		if (FD_ISSET(sockfd, &tmp_fds)) {
 			memset(buffer, 0, sizeof(buffer));
 			int bytes_received = recv(sockfd, buffer, sizeof(buffer), 0);
 			DIE(bytes_received < 0, "Recv error in run_client");
 
-			/* Mesaj de inchidere */
+			/* Mesaj de inchidere a subscriberului */
 			if (strncmp(buffer, "exit", 4) == 0) {
 				break;
 			} else {
@@ -141,9 +139,7 @@ int main(int argc, char *argv[])
 			}
 		}
 	}
-
 	/* Se inchide conexiunea si socketul creat */
 	close(sockfd);
-
 	return 0;
 }

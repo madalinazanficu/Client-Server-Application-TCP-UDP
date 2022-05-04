@@ -45,17 +45,20 @@ struct packet_tcp_t {
 void from_udp_to_tcp(char buffer[1600], char ip_address[BUFLEN],
                     uint16_t port, struct packet_tcp_t *tcp_packet);
 
-void connect_client(fd_set *read_fds, int cl_socket, char client_id[BUFLEN], char ip_address[BUFLEN],
-					uint16_t port,  std::vector<struct client_t> &all_clients,
+void connect_client(fd_set *read_fds, int cl_socket, char client_id[BUFLEN],
+                    char ip_address[BUFLEN], uint16_t port, 
+                    std::vector<struct client_t> &all_clients,
 					std::unordered_map<int, std::queue<packet_tcp_t>> &waiting_queue);
 
 void disconnect_one_client(int cl_socket, fd_set *read_fds);
 
-void disconnect_all_clients(std::vector<struct client_t> &all_clients, fd_set *read_fds);
+void disconnect_all_clients(std::vector<struct client_t> &all_clients,
+                            fd_set *read_fds);
 
 void notify_clients(std::vector<struct client_t> &all_clients,
                     char topic[50], struct packet_tcp_t *tcp_packet,
-                    std::unordered_map<int, std::queue <struct packet_tcp_t>> &waiting_queue);
+                    std::unordered_map<int,
+                    std::queue <struct packet_tcp_t>> &waiting_queue);
 
 void subscribe_user(std::string &client_id, char* topic, int new_sf,
 					std::vector<struct client_t>&all_clients);
@@ -63,7 +66,8 @@ void subscribe_user(std::string &client_id, char* topic, int new_sf,
 void unsubscribe_user(std::string &client_id, char* topic,
 					std::vector<struct client_t>& all_clients);
 
-void change_sf(std::string &client_id, int sf, std::vector<struct client_t>& all_clients);
+void change_sf(std::string &client_id, int sf,
+               std::vector<struct client_t>& all_clients);
 
 void send_from_queue(int cl_socket, std::unordered_map<int,
 					std::queue<packet_tcp_t>> &waiting_queue);

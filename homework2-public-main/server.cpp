@@ -15,9 +15,6 @@
 #include <queue>
 #include <string>
 
-/*  AM RAMAS LA RETRIMITEREA TUTUROR CHESTILOR RAMASE
-	IN COADA ATUNCI CAND UN CLIENT SE REACTIVEAZA*/
-
 /* int    -> socketul clientului 
    char * -> id-ul clientului  */
 std::unordered_map<int, std::string> clients_id;
@@ -26,7 +23,6 @@ std::unordered_map<int, std::string> clients_id;
 /* char * -> soecket-ul clientului  
    queue -> coada de pachete ce asteapta a fi trimise */
 std::unordered_map<int, std::queue <struct packet_tcp_t>> waiting_queue;
-
 std::vector<struct client_t> all_clients;
 
 
@@ -97,7 +93,7 @@ int main(int argc, char *argv[])
 
 
 	/* Se adauga noii file descriptors (socketul pe care
-	   se asculta conexiuni TCP si socketul pe care se sculta
+	   se asculta conexiuni TCP si socketul pe care se asculta
 	   conexiuni UDP) in multimea read_fds */
 	FD_SET(sockfd, &read_fds);
 	FD_SET(udp_socket, &read_fds);
@@ -118,7 +114,6 @@ int main(int argc, char *argv[])
 				break;
 			}
 		}
-
 		for (i = 1; i <= fdmax; i++) {
 			if (FD_ISSET(i, &tmp_fds)) {
 				if (i == sockfd) {
@@ -141,64 +136,53 @@ int main(int argc, char *argv[])
 									ntohs(cli_addr.sin_port), all_clients, waiting_queue);
 								
 				} else if (i == udp_socket) {
-					/* Datagrama de la clientul UDP */
 					memset(buffer, 0, BUFLEN);
+					/* Datagrama de la clientul UDP */
 					n = recvfrom(udp_socket, buffer, BUFLEN, 0,
 								(struct sockaddr *) &cli_addr, &clilen);
 					DIE(n < 0, "Invalid datagram");
 
-
 					struct packet_tcp_t *tcp_packet = (struct packet_tcp_t *)
 														malloc(sizeof(struct packet_tcp_t));
 
+					/* Parsarea datelor */
 					from_udp_to_tcp(buffer, inet_ntoa(cli_addr.sin_addr),
 									ntohs(cli_addr.sin_port), tcp_packet);
 
+					/* Notificarea clientilor abondati */
 					notify_clients(all_clients, tcp_packet->topic, tcp_packet, waiting_queue);
-
 				} else {
-					/* S-au primit date pe unul din socketii de client,
-						asa ca serverul trebuie sa le receptioneze */
+					/* S-au primit date pe unul din socketii de client */
 					memset(buffer, 0, BUFLEN);
 					n = recv(i, buffer, sizeof(buffer), 0);
 					DIE(n < 0, "recv");
 
+					/* Conexiunea s-a inchis */
 					if (n == 0) {
-						/* Conexiunea s-a inchis */
 						std::cout << "Client " << clients_id[i] << " disconnected.\n";
-						close(i);
-
-						/* Sterg clientul din lista*/
 						for (auto it = all_clients.begin(); it != all_clients.end(); it++) {
 							if (it->socket == i) {
 								it->active = false;
 								break;
 							}
-						}
-						
-						/* Se scoate din multimea de citire socketul inchis */
+						} 
+						close(i);
 						FD_CLR(i, &read_fds);
 					} else {
+						/* Comanda de subscribe / unsubscribe de la client */
 						char *command = strtok(buffer, " ");
 						if (strncmp(command, "subscribe", 9) == 0) {
-							/* Pentru subscribe => subscribe / topic / sf */
 							char *topic = strtok(NULL, " ");
 							char *sf = strtok(NULL, " ");
-
-							/* Daca sf = 1 => cand clientul este dezactivat, se retine coada de pachete
-							   Daca sf = 0 => nu se retine coada de pachete */
 							int new_sf = atoi(sf);
 							if (new_sf == 0 || new_sf == 1) {
 								subscribe_user(clients_id[i], topic, new_sf, all_clients);
 							} else {
 								fprintf(stderr, "Invalid SF!");
 							}
-
 						} else if (strncmp(command, "unsubscribe", 11) == 0) {
-							/* Pentru unsubscribe => unsubscribe / topic */
 							char *topic = strtok(NULL, " ");
 							unsubscribe_user(clients_id[i], topic, all_clients);
-
 						} else {
 							fprintf(stderr, "Invalid command!");
 						}
